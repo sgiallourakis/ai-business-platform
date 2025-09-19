@@ -28,7 +28,7 @@ class DataUpload(Base):
     file_type = Column(String)
     
     # When the file was uploaded (automatically set by database)
-    upload_date = Column(DateTime, server_default=func.now())
+    upload_time = Column(DateTime, server_default=func.now())
     
     # Current status of the upload (e.g., "uploaded", "processing", "analyzed", "error")
     status = Column(String, default="uploaded")

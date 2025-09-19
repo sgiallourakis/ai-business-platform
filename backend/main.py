@@ -2,6 +2,8 @@
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+import pandas as pd
+from io import StringIO, BytesIO
 import json
 from datetime import datetime
 
@@ -33,15 +35,17 @@ async def upload_file(
     db: Session = Depends(get_db) 
 ): 
     """
-    Upload and validate a CSV/Excel file for analysis
+    Upload, validate, and analyze a CSV/Excel file
     """
+    upload_record = None
+    
     try:
         # Validate file type
         allowed_types = ["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
         if file.content_type not in allowed_types:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid file type. Only CSV and Excel files are allowed."
+                detail="Only CSV and Excel files are supported"
             )
 
         # Determine file type
@@ -57,19 +61,64 @@ async def upload_file(
         db.commit()
         db.refresh(upload_record)
 
+        # Read file content
+        content = await file.read()
+        
+        # Process the file with pandas
+        if file_type == "csv":
+            import pandas as pd
+            from io import StringIO
+            df = pd.read_csv(StringIO(content.decode('utf-8')))
+        else:
+            import pandas as pd
+            from io import BytesIO
+            df = pd.read_excel(BytesIO(content))
+        
+        # Generate data analysis
+        analysis_result = {
+            "rows": len(df),
+            "columns": len(df.columns),
+            "column_names": df.columns.tolist(),
+            "data_types": df.dtypes.astype(str).to_dict(),
+            "sample_data": df.head(5).fillna("null").to_dict('records'),  # Replace NaN with "null"
+            "missing_values": df.isnull().sum().to_dict(),
+            "numeric_summary": df.select_dtypes(include=['number']).describe().fillna(0).to_dict() if not df.select_dtypes(include=['number']).empty else {}
+        }
+                
+        # Save analysis to database
+        analysis_record = Analysis(
+            data_upload_id=upload_record.id,
+            analysis_type="data_summary",
+            result=json.dumps(analysis_result),
+            confidence=1.0
+        )
+        db.add(analysis_record)
+        
+        # Update upload status to analyzed
+        upload_record.status = "analyzed"
+        db.commit()
+        
         return {
             "upload_id": upload_record.id,
             "filename": upload_record.filename,
-            "message": "File uploaded successfully and is being processed.",
-            "status": "processing"
+            "message": "File uploaded successfully",
+            "status": "analyzed",
+            "analysis": analysis_result
         }
-
+        
     except HTTPException:
-        # Re-raise HTTP exceptions (like file type validation)
+        # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File upload failed: {str(e)}")
-
+        # Handle any other errors
+        if upload_record:
+            upload_record.status = "error"
+            db.commit()
+        
+        raise HTTPException(
+            status_code=422, 
+            detail=f"Failed to process file: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
