@@ -1,0 +1,6 @@
+name,age,salary,department,start_date,active
+John Doe,25,50000.0,Engineering,2023-01-15,true
+Jane Smith,30,,Marketing,2022-06-01,true
+Bob Johnson,35,65000.5,Sales,,false
+Alice Brown,,55000.0,Engineering,2023-03-10,true
+Charlie Wilson,32,70000.0,Marketing,2021-12-01,true

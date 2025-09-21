@@ -29,6 +29,48 @@ def read_root():
 def health_check():
     return {"status": "healthy"}
 
+@app.get("/uploads")
+def get_uploads(db: Session = Depends(get_db)):
+    """
+    Get all uploaded files ordered by newest first
+    """
+    try:
+        uploads = db.query(DataUpload).order_by(DataUpload.upload_time.desc()).all()
+        return [
+            {
+                "id": upload.id,
+                "filename": upload.filename,
+                "file_type": upload.file_type,
+                "upload_time": upload.upload_time,
+                "status": upload.status
+            }
+            for upload in uploads
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/analysis/{upload_id}")
+def get_analysis(upload_id: int, db: Session = Depends(get_db)):
+    """
+    Get analysis results for a specific upload
+    """
+    try:
+        analysis = db.query(Analysis).filter(Analysis.data_upload_id == upload_id).first()
+        if not analysis:
+            raise HTTPException(status_code=404, detail="Analysis not found")
+        
+        return {
+            "id": analysis.id,
+            "analysis_type": analysis.analysis_type,
+            "result": json.loads(analysis.result),
+            "confidence": analysis.confidence,
+            "created_at": analysis.created_at
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -66,12 +108,8 @@ async def upload_file(
         
         # Process the file with pandas
         if file_type == "csv":
-            import pandas as pd
-            from io import StringIO
             df = pd.read_csv(StringIO(content.decode('utf-8')))
         else:
-            import pandas as pd
-            from io import BytesIO
             df = pd.read_excel(BytesIO(content))
         
         # Generate data analysis
@@ -83,6 +121,7 @@ async def upload_file(
             "sample_data": df.head(5).fillna("null").to_dict('records'),  # Replace NaN with "null"
             "missing_values": df.isnull().sum().to_dict(),
             "numeric_summary": df.select_dtypes(include=['number']).describe().fillna(0).to_dict() if not df.select_dtypes(include=['number']).empty else {}
+        
         }
                 
         # Save analysis to database

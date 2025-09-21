@@ -1,0 +1,4 @@
+name,age,department,salary
+John Doe,25,Engineering,75000
+Jane Smith,30,Marketing,65000
+Bob Johnson,35,Sales,70000
